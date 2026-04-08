@@ -30,5 +30,15 @@ services:
       - monitor_quarentena_data:/app/Quarentena_XML
 
 volumes:
-  monitor_db_data:
-  monitor_quarentena_data:
+volumes:
+      # O lado ESQUERDO é o seu Windows. O lado DIREITO é dentro do Docker.
+      
+      # 1. Onde caem os XMLs hoje na sua rede (ou numa pasta de teste na sua máquina)
+      - \\192.168.0.202\publico\Lsantos\ListasRestritiva\in:/app/xml_origem
+      
+      # 2. Onde está o seu advice.xml e o arquivo de senha (CRIPTO) localmente
+      - C:\ADVICE\config:/app/config_advice
+      
+      # 3 e 4. Mantemos os volumes gerenciados pelo Docker para o banco e quarentena
+      - monitor_db_data:/app/dados
+      - monitor_quarentena_data:/app/Quarentena_XML
