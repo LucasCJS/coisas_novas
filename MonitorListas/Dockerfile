@@ -1,7 +1,7 @@
 # Dockerfile
 
 # ---- STAGE 1: Build Frontend (React/Vite) ----
-FROM node:18 AS build-node
+FROM node:lts AS build-node
 WORKDIR /app/frontend
 COPY monitorlistas.client/package*.json ./
 RUN npm install
