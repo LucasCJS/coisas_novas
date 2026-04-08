@@ -1,0 +1,47 @@
+# ==========================================
+# 1. Backend (.NET / C#)
+# ==========================================
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+
+# ==========================================
+# 2. Frontend (React / Node.js)
+# ==========================================
+monitorlistas.client/node_modules/
+monitorlistas.client/dist/
+monitorlistas.client/build/
+npm-debug.log
+yarn-error.log
+.env
+.env.local
+
+# ==========================================
+# 3. Bancos de Dados e Arquivos Temporários
+# ==========================================
+# Ignora os bancos SQLite locais para não subir dados de teste pro Git
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# Ignora as pastas físicas que o nosso serviço C# cria/manipula
+Quarentena_XML/
+xml_origem/
+config_advice/
+dados/
+
+# Ignora arquivos de log e debug
+*.log
+
+# ==========================================
+# 4. Configurações de SO e IDEs
+# ==========================================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

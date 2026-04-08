@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="monitorlistas.client/monitorlistas.client.esproj">
+    <Build />
+    <Deploy />
+  </Project>
+  <Project Path="MonitorListas.Server/MonitorListas.Server.csproj" />
+</Solution>

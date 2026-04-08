@@ -1,0 +1,41 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body, #root {
+    min-height: 100vh;
+    background-color: #f8fafc;
+}
+
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #334155;
+    line-height: 1.5;
+}
+
+#root {
+    width: 100%;
+    max-width: 100%;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+table tbody tr:hover {
+    background-color: #f1f5f9 !important;
+}

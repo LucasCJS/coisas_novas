@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Validador de XML Lote</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; color: #333; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .upload-card { border: none; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        .accordion-button { font-weight: 500; }
+        .accordion-button:not(.collapsed) { background-color: #eef2f5; color: #212529; box-shadow: none; }
+        .erro-item { border-left: 4px solid #dc3545; background-color: #fff; margin-bottom: 8px; border-radius: 4px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+        .badge-resumo { font-weight: 500; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+    <div class="container py-5" style="max-width: 900px;">
+        <h2 class="mb-4 text-center fw-bold text-secondary">Validador de XML em Lote</h2>
+        
+        <div class="card upload-card p-4 mb-5 bg-white">
+            <form method="post" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label class="form-label text-muted fw-semibold">Carregue até 20 arquivos XML simultaneamente</label>
+                    <input type="file" name="file" class="form-control form-control-lg" multiple accept=".xml" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-lg w-100 shadow-sm">Processar Arquivos</button>
+            </form>
+        </div>
+
+        {% if resultados %}
+            <h5 class="mb-3 text-secondary border-bottom pb-2">Resultados da Validação: {{ resultados|length }} arquivo(s) processado(s)</h5>
+            
+            <div class="accordion" id="accordionResultados">
+                {% for res in resultados %}
+                <div class="accordion-item mb-3 border-0 shadow-sm rounded">
+                    <h2 class="accordion-header" id="heading{{ loop.index }}">
+                        <button class="accordion-button rounded {% if loop.index != 1 %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}" aria-expanded="{% if loop.index == 1 %}true{% else %}false{% endif %}" aria-controls="collapse{{ loop.index }}">
+                            <div class="d-flex justify-content-between w-100 me-3 align-items-center">
+                                <span class="text-truncate" style="max-width: 70%;">📄 {{ res.arquivo }}</span>
+                                {% if res.erros|length > 0 %}
+                                    <span class="badge bg-danger rounded-pill px-3">{{ res.erros|length }} erros</span>
+                                {% else %}
+                                    <span class="badge bg-success rounded-pill px-3">Validade 100%</span>
+                                {% endif %}
+                            </div>
+                        </button>
+                    </h2>
+                    
+                    <div id="collapse{{ loop.index }}" class="accordion-collapse collapse {% if loop.index == 1 %}show{% endif %}" aria-labelledby="heading{{ loop.index }}">
+                        <div class="accordion-body bg-light">
+                            {% if not res.erros %}
+                                <div class="alert alert-success m-0 border-0 shadow-sm">
+                                    <strong>Perfeito!</strong> O arquivo passou em todas as validações de estrutura, caracteres, e regras de negócio.
+                                </div>
+                            {% else %}
+                                <div class="mb-3 d-flex flex-wrap gap-2">
+                                    {% for tipo, qtd in res.resumo.items() %}
+                                        <span class="badge bg-secondary badge-resumo px-2 py-1">{{ tipo }}: {{ qtd }}</span>
+                                    {% endfor %}
+                                </div>
+                                
+                                <div>
+                                    {% for erro in res.erros %}
+                                    <div class="erro-item">
+                                        <div class="d-flex justify-content-between">
+                                            <strong class="text-danger small">[{{ erro.tipo }}]</strong>
+                                            {% if erro.linha != "-" %}
+                                                <span class="text-muted small">Linha: {{ erro.linha }}</span>
+                                            {% endif %}
+                                        </div>
+                                        <div class="fw-bold small mt-1 text-dark">Tag: {{ erro.tag }}</div>
+                                        <div class="text-secondary small mt-1">→ {{ erro.detalhe }}</div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
