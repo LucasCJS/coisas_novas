@@ -82,6 +82,44 @@ export const MonitorXml: React.FC = () => {
         }
     };
 
+    // ==========================================
+    // FUNÇÃO 3: DOWNLOAD SEGURO (COM TOKEN)
+    // ==========================================
+    const handleDownload = async (nomeArquivo: string) => {
+        try {
+            const token = localStorage.getItem('monitor_token');
+            const response = await fetch(`/api/xml/download?arquivo=${encodeURIComponent(nomeArquivo)}`, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.status === 401) {
+                alert("Sessão expirada. Faça login novamente.");
+                window.location.reload();
+                return;
+            }
+
+            if (!response.ok) {
+                alert("Erro ao baixar o arquivo. Ele pode não existir mais.");
+                return;
+            }
+
+            // Transforma a resposta em um arquivo e força o download no navegador
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = nomeArquivo;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (erro) {
+            console.error('Erro no download', erro);
+            alert("Erro de comunicação com o servidor.");
+        }
+    };
+
     const handleLogout = () => {
         if (window.confirm("Deseja realmente sair do painel?")) {
             localStorage.removeItem('monitor_token');
@@ -358,12 +396,15 @@ export const MonitorXml: React.FC = () => {
                                             <td style={styles.td}>{new Date(arq.dataGeracao).toLocaleString('pt-BR')}</td>
                                             <td style={{ ...styles.td, textAlign: 'center' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
-                                                    {/* Botão de Download (Todos) */}
-                                                    <a href={`/api/xml/download?arquivo=${encodeURIComponent(arq.nome)}`} download={arq.nome} style={styles.downloadButton} title="Baixar Arquivo">
+
+                                                    {/* ========================================== */}
+                                                    {/* Botão de Download SEGURO (Foi alterado de <a> para <button>) */}
+                                                    {/* ========================================== */}
+                                                    <button onClick={() => handleDownload(arq.nome)} style={styles.downloadButton} title="Baixar Arquivo">
                                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={styles.downloadIcon}>
                                                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
                                                         </svg>
-                                                    </a>
+                                                    </button>
 
                                                     {/* Botões de Exclusão (APENAS na aba de Histórico/Inválidos) */}
                                                     {!arq.isValido && (

@@ -1,5 +1,3 @@
-# Dockerfile
-
 # ---- STAGE 1: Build Frontend (React/Vite) ----
 FROM node:lts AS build-node
 WORKDIR /app/frontend
@@ -16,42 +14,26 @@ RUN dotnet restore MonitorListas.Server/MonitorListas.Server.csproj
 COPY MonitorListas.Server/ ./MonitorListas.Server/
 RUN dotnet publish MonitorListas.Server/MonitorListas.Server.csproj -c Release -o /app/publish /p:UseAppHost=false
 
-# ---- STAGE 3: Runtime (Debian-based) ----
-FROM mcr.microsoft.com/dotnet/aspnet:6.0
+# ---- STAGE 3: Runtime ----
+FROM mcr.microsoft.com/dotnet/aspnet:6.0-bullseye-slim
 WORKDIR /app
 
-# ---- OPENSSL LEGACY CONFIGURATION ----
-# Habilita TLSv1.0 e reduz SECLEVEL para permitir conexão com instâncias 
-# legadas do SQL Server (bypass idêntico ao utilizado na imagem laudio/pyodbc).
-RUN echo "openssl_conf = openssl_init" > /etc/ssl/openssl_legacy.cnf \
-    && echo "[openssl_init]" >> /etc/ssl/openssl_legacy.cnf \
-    && echo "providers = provider_sect" >> /etc/ssl/openssl_legacy.cnf \
-    && echo "ssl_conf = ssl_sect" >> /etc/ssl/openssl_legacy.cnf \
-    && echo "[provider_sect]" >> /etc/ssl/openssl_legacy.cnf \
-    && echo "default = default_sect" >> /etc/ssl/openssl_legacy.cnf \
-    && echo "legacy = legacy_sect" >> /etc/ssl/openssl_legacy.cnf \
-    && echo "[default_sect]" >> /etc/ssl/openssl_legacy.cnf \
-    && echo "activate = 1" >> /etc/ssl/openssl_legacy.cnf \
-    && echo "[legacy_sect]" >> /etc/ssl/openssl_legacy.cnf \
-    && echo "activate = 0" >> /etc/ssl/openssl_legacy.cnf \
-    && echo "[ssl_sect]" >> /etc/ssl/openssl_legacy.cnf \
-    && echo "system_default = system_default_sect" >> /etc/ssl/openssl_legacy.cnf \
-    && echo "[system_default_sect]" >> /etc/ssl/openssl_legacy.cnf \
-    && echo "MinProtocol = TLSv1.0" >> /etc/ssl/openssl_legacy.cnf \
-    && echo "CipherString = DEFAULT@SECLEVEL=0" >> /etc/ssl/openssl_legacy.cnf
+# Instala ferramentas essenciais e o cliente sqlite3 para debugar o banco
+RUN apt-get update \
+    && apt-get install -y openssl ca-certificates sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
 
-ENV OPENSSL_CONF=/etc/ssl/openssl_legacy.cnf
-# --------------------------------------
+# Ajuste de TLS para SQL Server legado (SECLEVEL 0)
+RUN sed -i 's/@SECLEVEL=2/@SECLEVEL=0/g' /etc/ssl/openssl.cnf \
+    && sed -i 's/MinProtocol = TLSv1.2/MinProtocol = TLSv1/g' /etc/ssl/openssl.cnf || true
 
-# Cópia dos artefatos compilados das etapas anteriores
+# Copia os artefatos compilados
 COPY --from=build-dotnet /app/publish .
 COPY --from=build-node /app/frontend/dist ./wwwroot
 
-# Criação dos diretórios estruturais para injeção de volumes via Docker Compose
-RUN mkdir -p /app/xml_origem \
-    && mkdir -p /app/Quarentena_XML \
-    && mkdir -p /app/dados \
-    && mkdir -p /app/config_advice
+# Criação de pastas e permissão de escrita para volumes e SQLite
+RUN mkdir -p /app/xml_origem /app/Quarentena_XML /app/dados /app/config_advice \
+    && chmod -R 777 /app/Quarentena_XML /app/dados /app/xml_origem
 
 EXPOSE 80
 ENV ASPNETCORE_URLS=http://+:80

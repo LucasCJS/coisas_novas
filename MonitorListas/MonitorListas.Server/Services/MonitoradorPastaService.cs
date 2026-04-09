@@ -1,16 +1,17 @@
 ﻿using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Hosting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using MonitorListas.Server.Hubs;
-using MonitorListas.Server.Models;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using MonitorListas.Server.Data;
+using MonitorListas.Server.Models;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
 
 namespace MonitorListas.Server.Services
 {
@@ -19,7 +20,9 @@ namespace MonitorListas.Server.Services
         private readonly MonitorSettings _settings;
         private readonly IHubContext<MonitorHub> _hubContext;
         private readonly IServiceScopeFactory _scopeFactory;
-        private readonly HashSet<string> _arquivosConhecidos = new HashSet<string>();
+
+        private HashSet<string> _arquivosEnviados = new();
+        private List<ArquivoXml> _cacheAtual = new();
 
         public MonitoradorPastaService(
             IOptions<MonitorSettings> options,
@@ -31,42 +34,72 @@ namespace MonitorListas.Server.Services
             _scopeFactory = scopeFactory;
         }
 
+        public async Task ReenviarEstado(string connectionId)
+        {
+            foreach (var arquivo in _cacheAtual)
+            {
+                await _hubContext.Clients.Client(connectionId)
+                    .SendAsync("ReceberNovoArquivo", arquivo);
+            }
+        }
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            string caminho = _settings.CaminhoPasta;
+            bool isDocker = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+            string caminho = isDocker ? "/app/xml_origem" : _settings.CaminhoPasta;
+
             TimeSpan intervalo = TimeSpan.FromSeconds(_settings.IntervaloVerificacaoSegundos);
 
-            _ = Task.Run(async () =>
+            while (!stoppingToken.IsCancellationRequested)
             {
-                while (!stoppingToken.IsCancellationRequested)
+                try
                 {
-                    try
+                    using var scope = _scopeFactory.CreateScope();
+                    var dbContext = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
+
+                    RealizarFaxina(dbContext);
+
+                    var directory = new DirectoryInfo(caminho);
+
+                    if (directory.Exists)
                     {
-                        using var scope = _scopeFactory.CreateScope();
-                        var dbContext = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
-
-                        RealizarFaxina(dbContext);
-
-                        var directory = new DirectoryInfo(caminho);
-
-                        if (directory.Exists)
-                        {
-                            var arquivosAtuais = directory.EnumerateFiles("*.xml", new EnumerationOptions { MatchCasing = MatchCasing.CaseInsensitive })
+                        var arquivosAtuais = directory
+                            .EnumerateFiles("*.xml", new EnumerationOptions { MatchCasing = MatchCasing.CaseInsensitive })
                             .OrderByDescending(f => f.LastWriteTime)
-                            .Take(50); ;
+                            .Take(50)
+                            .ToList();
+
+                        var nomesAtuais = arquivosAtuais
+                            .Select(a => a.Name)
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                        bool mudou = !_arquivosEnviados.SetEquals(nomesAtuais);
+
+                        if (mudou)
+                        {
+                            Console.WriteLine($"[Monitor] Arquivos detectados: {nomesAtuais.Count}");
+
+                            // LIMPE O CACHE E A TELA PRIMEIRO
+                            _arquivosEnviados.Clear();
+                            _cacheAtual.Clear();
+                            await _hubContext.Clients.All.SendAsync("LimparLista", stoppingToken);
 
                             foreach (var arquivo in arquivosAtuais)
                             {
-                                if (!_arquivosConhecidos.Contains(arquivo.Name))
+                                if (!IsFileReady(arquivo.FullName))
                                 {
-                                    if (!IsFileReady(arquivo.FullName))
-                                    {
-                                        continue;
-                                    }
+                                    // O arquivo ainda está sendo gravado na rede. Pula, mas NÃO adiciona nos "enviados".
+                                    // No próximo ciclo de 5 segundos, o "mudou" vai dar true de novo e ele tenta novamente.
+                                    continue;
+                                }
 
-                                    var validacao = ValidadorXml.Validar(arquivo.FullName);
+                                var validacao = ValidadorXml.Validar(arquivo.FullName);
 
-                                    if (!validacao.IsValido)
+                                if (!validacao.IsValido)
+                                {
+                                    var jaExiste = await dbContext.Arquivos.AnyAsync(a => a.Nome == arquivo.Name, stoppingToken);
+
+                                    if (!jaExiste)
                                     {
                                         var registro = new ArquivoRegistro
                                         {
@@ -77,59 +110,56 @@ namespace MonitorListas.Server.Services
                                             ErrosFormatados = string.Join(";", validacao.Erros)
                                         };
 
-                                        if (!dbContext.Arquivos.Any(a => a.Nome == arquivo.Name))
-                                        {
-                                            dbContext.Arquivos.Add(registro);
-                                            await dbContext.SaveChangesAsync(stoppingToken);
-                                        }
-
-                                        string pastaQuarentena = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Quarentena_XML");
-                                        if (!Directory.Exists(pastaQuarentena)) Directory.CreateDirectory(pastaQuarentena);
-
-                                        string caminhoDestino = Path.Combine(pastaQuarentena, arquivo.Name);
-                                        File.Copy(arquivo.FullName, caminhoDestino, true);
+                                        dbContext.Arquivos.Add(registro);
+                                        await dbContext.SaveChangesAsync(stoppingToken);
                                     }
-
-                                    var novoXml = new ArquivoXml
-                                    {
-                                        Nome = arquivo.Name,
-                                        DataGeracao = arquivo.LastWriteTime,
-                                        IsValido = validacao.IsValido,
-                                        Erros = validacao.Erros
-                                    };
-
-                                    await _hubContext.Clients.All.SendAsync("ReceberNovoArquivo", novoXml, stoppingToken);
-                                    Console.WriteLine($"[SignalR] {arquivo.Name} | Status: {validacao.IsValido}");
-
-                                    _arquivosConhecidos.Add(arquivo.Name);
                                 }
+
+                                var novoXml = new ArquivoXml
+                                {
+                                    Nome = arquivo.Name,
+                                    DataGeracao = arquivo.LastWriteTime,
+                                    IsValido = validacao.IsValido,
+                                    Erros = validacao.Erros
+                                };
+
+                                await _hubContext.Clients.All.SendAsync("ReceberNovoArquivo", novoXml, stoppingToken);
+
+                                // ADICIONE AQUI: Só adiciona no cache e na lista se realmente leu com sucesso!
+                                _cacheAtual.Add(novoXml);
+                                _arquivosEnviados.Add(arquivo.Name);
+
+                                Console.WriteLine($"[SignalR] {arquivo.Name} | Status: {validacao.IsValido}");
                             }
                         }
-                        else
-                        {
-                            Console.WriteLine($"[IO Warning] Path not found: {caminho}");
-                        }
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        Console.WriteLine($"[MonitoradorPastaService Error] {ex.Message}");
+                        Console.WriteLine($"[IO Warning] Path not found: {caminho}");
                     }
-
-                    await Task.Delay(intervalo, stoppingToken);
                 }
-            }, stoppingToken);
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[MonitoradorPastaService Error] {ex.Message}");
+                }
+
+                await Task.Delay(intervalo, stoppingToken);
+            }
         }
 
         private bool IsFileReady(string filename)
         {
             try
             {
-                using (FileStream inputStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.None))
-                {
-                    return inputStream.Length > 0;
-                }
+                using var stream = new FileStream(
+                    filename,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite);
+
+                return stream.Length > 0;
             }
-            catch (Exception)
+            catch
             {
                 return false;
             }
@@ -140,25 +170,16 @@ namespace MonitorListas.Server.Services
             try
             {
                 var dataLimite = DateTime.Today.AddDays(-_settings.DiasRetencao);
-                var registrosVencidos = dbContext.Arquivos.Where(a => a.DataGeracao < dataLimite).ToList();
+
+                var registrosVencidos = dbContext.Arquivos
+                    .Where(a => a.DataGeracao < dataLimite)
+                    .ToList();
 
                 if (registrosVencidos.Any())
                 {
                     dbContext.Arquivos.RemoveRange(registrosVencidos);
                     dbContext.SaveChanges();
 
-                    string pastaQuarentena = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Quarentena_XML");
-                    if (Directory.Exists(pastaQuarentena))
-                    {
-                        foreach (var reg in registrosVencidos)
-                        {
-                            string caminhoFisico = Path.Combine(pastaQuarentena, reg.Nome);
-                            if (File.Exists(caminhoFisico))
-                            {
-                                File.Delete(caminhoFisico);
-                            }
-                        }
-                    }
                     Console.WriteLine($"[Cleanup Task] {registrosVencidos.Count} stale records purged.");
                 }
             }

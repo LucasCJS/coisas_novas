@@ -16,43 +16,33 @@ namespace MonitorListas.Server.Security
 
             try
             {
-                // Verifica a plataforma (Windows vs Linux/Docker)
+                // Lógica de localização do arquivo XML (Windows vs Linux)
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
                     string systemFolder = Utils.GetSpecialFolder(Environment.SpecialFolder.System);
                     caminhoConfig = Path.Combine(systemFolder, "advice.xml");
                     string caminhoSysWow64 = caminhoConfig.ToUpper().Replace("SYSTEM32", "SYSWOW64");
 
-                    if (File.Exists(caminhoSysWow64))
-                    {
-                        caminhoConfig = caminhoSysWow64;
-                    }
-                    else if (!File.Exists(caminhoConfig))
-                    {
-                        caminhoConfig = Utils.FnLeChaveRegistro("caminho_config");
-                    }
+                    if (File.Exists(caminhoSysWow64)) caminhoConfig = caminhoSysWow64;
+                    else if (!File.Exists(caminhoConfig)) caminhoConfig = Utils.FnLeChaveRegistro("caminho_config");
                 }
                 else
                 {
-                    // Fallbacks baseados na arquitetura Docker da Infraestrutura (Python)
                     string[] caminhosLinux = {
+                        "/app/config_advice/Advice.xml",
+                        "/app/config_advice/advice.xml",
                         "/app/config/Advice.xml",
-                        "/app/config/advice.xml",
-                        "/app/Advice.xml",
-                        "/app/advice.xml",
-                        "config/Advice.xml",
-                        "Advice.xml",
-                        "advice.xml"
+                        "/app/Advice.xml"
                     };
 
                     caminhoConfig = Environment.GetEnvironmentVariable("ADVICE_XML_PATH")
                                   ?? caminhosLinux.FirstOrDefault(c => File.Exists(c))
-                                  ?? "/app/config/Advice.xml";
+                                  ?? "/app/config_advice/Advice.xml";
                 }
 
                 if (!File.Exists(caminhoConfig))
                 {
-                    throw new FileNotFoundException($"Arquivo XML de configuração não encontrado em: {caminhoConfig}");
+                    throw new FileNotFoundException($"Arquivo XML não encontrado: {caminhoConfig}");
                 }
 
                 XmlDocument domParam = new XmlDocument();
@@ -62,26 +52,33 @@ namespace MonitorListas.Server.Security
 
                 if (bancoDadosNode != null)
                 {
-                    string servidor = bancoDadosNode["NOME_SERVIDOR"]?.InnerText ?? "localhost";
-                    string nomeBanco = bancoDadosNode["NOME_BD"]?.InnerText ?? "";
-                    string usuario = bancoDadosNode["USUARIO"]?.InnerText ?? "";
+                    // O segredo está no .Trim() e em manter a string original do XML
+                    string servidor = (bancoDadosNode["NOME_SERVIDOR"]?.InnerText ?? "").Trim();
+                    string nomeBanco = (bancoDadosNode["NOME_BD"]?.InnerText ?? "").Trim();
+                    string usuario = (bancoDadosNode["USUARIO"]?.InnerText ?? "").Trim();
+                    string caminhoSenha = (bancoDadosNode["SENHA"]?.InnerText ?? "").Trim();
 
-                    // O nó SENHA no XML original traz o caminho do arquivo CRIPTO (ex: C:\Sistemas\TRIBUNAIS.CRIPTO)
-                    string caminhoSenha = bancoDadosNode["SENHA"]?.InnerText ?? "";
-
-                    // A classe PasswordHelper se encarrega de abstrair o caminho caso esteja no Docker
+                    // Pega a senha descriptografada
                     string senha = PasswordHelper.GetPassword(caminhoSenha);
 
-                    connectionString = $"Data Source={servidor};Initial Catalog={nomeBanco};User ID={usuario};Password={senha};TrustServerCertificate=True;";
+                    // MONTAGEM TOTALMENTE DINÂMICA
+                    // 1. Usamos exatamente o que está no XML (seja IP, Host, ou IP\Instancia)
+                    // 2. Encrypt=False: Fundamental para o seu cenário sem SSL oficial (conforme DBeaver)
+                    // 3. TrustServerCertificate=True: Essencial para o aperto de mão no Linux
+
+                    // No ConnectionStringBuilder.cs
+                    connectionString = $"Server={servidor};Database={nomeBanco};User Id={usuario};Password={senha};Encrypt=False;TrustServerCertificate=True;Integrated Security=False;Connect Timeout=30;MultiSubnetFailover=True;";
+
+                    Console.WriteLine($"[DB] Conexão montada via XML para: {servidor}");
                 }
                 else
                 {
-                    throw new Exception($"Nó BANCO_DADOS não encontrado no XML para o sistema {sistema} e empresa {empresa}.");
+                    throw new Exception($"Configuração não encontrada no XML para {sistema}/{empresa}");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Erro ao montar a string de conexão: {ex.Message}");
+                Console.WriteLine($"Erro ao montar string: {ex.Message}");
                 throw;
             }
 

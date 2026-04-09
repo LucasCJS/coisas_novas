@@ -3,7 +3,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.SignalR;
 using MonitorListas.Server.Data;
 using MonitorListas.Server.Repositories;
-using MonitorListas.Server.Hubs;
 using System;
 using System.Threading;
 using System.Threading.Tasks;

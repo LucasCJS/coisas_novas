@@ -40,29 +40,30 @@ namespace MonitorListas.Server.Security
             string caminhoReal = caminhoOriginalNoXml;
 
             // 1. TRATAMENTO CROSS-PLATFORM (Windows vs Linux/Docker)
-            // Se estivermos no Linux OU o arquivo original do Windows não existir, busca nas pastas do Docker
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || !File.Exists(caminhoReal))
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                // Mesmos caminhos de fallback que a equipe de Infra configurou no Python
+                // Extraímos o nome do arquivo que está no XML (ex: INTEGRACAOADV.CRIPTO ou CORP.CRIPTO)
+                // Usamos Split('\\') porque o caminho no XML vem com padrão Windows
+                string nomeArquivo = caminhoOriginalNoXml.Split('\\').Last();
+
+                // Buscamos nos caminhos que realmente existem no seu Docker Compose
                 string[] caminhosAlternativos = {
-                    "/app/config/INTEGRACAOADV.CRIPTO",
-                    "/app/INTEGRACAOADV.CRIPTO",
-                    "config/INTEGRACAOADV.CRIPTO",
-                    "INTEGRACAOADV.CRIPTO",
-                    "./INTEGRACAOADV.CRIPTO"
-                };
+            $"/app/config_advice/{nomeArquivo}", // Onde você mapeou no YAML
+            $"/app/config/{nomeArquivo}",
+            $"/app/{nomeArquivo}",
+            nomeArquivo
+        };
 
                 caminhoReal = caminhosAlternativos.FirstOrDefault(c => File.Exists(c)) ?? caminhoReal;
             }
 
             if (!File.Exists(caminhoReal))
             {
-                throw new FileNotFoundException($"Arquivo de senha CRIPTO não encontrado. Tentado original: {caminhoOriginalNoXml} e alternativas no Docker.");
+                throw new FileNotFoundException($"Arquivo de senha CRIPTO não encontrado: {caminhoReal}");
             }
 
-            // 2. LÊ O ARQUIVO FÍSICO
-            // O Python lê usando "iso-8859-1" (Latin1 no C#). Isso é crucial para os caracteres não quebrarem.
-            string encryptedPassword = File.ReadAllText(caminhoReal, Encoding.Latin1);
+            // 2. LÊ O ARQUIVO FÍSICO (Mantendo o Encoding Latin1 para compatibilidade com o legado)
+            string encryptedPassword = File.ReadAllText(caminhoReal, Encoding.GetEncoding("iso-8859-1"));
 
             // 3. DESCRIPTOGRAFA
             return DecryptPassword(encryptedPassword);
