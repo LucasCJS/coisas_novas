@@ -75,6 +75,9 @@ namespace MonitorListas.Server.Services
                             else
                                 contagemRegistros[chave] = 1;
 
+                            if (string.IsNullOrEmpty(cdListado))
+                                erros.Add($"CD_LISTADO: Obrigatório ({cdListado.Length})");
+
                             // Validações de Regra de Negócio
                             if (cdListado.Length > 20)
                                 erros.Add($"CD_LISTADO: Tamanho inválido ({cdListado.Length})");
