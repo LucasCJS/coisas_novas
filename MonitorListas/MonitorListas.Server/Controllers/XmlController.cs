@@ -219,5 +219,68 @@ namespace MonitorListas.Server.Controllers
                 return StatusCode(500, $"Erro ao limpar sistema: {ex.Message}");
             }
         }
+
+        // ==========================================
+        // 4. DUPLICAR ARQUIVO (VIRADA DE DIA)
+        // ==========================================
+        [HttpPost("duplicar-para-hoje")]
+        public IActionResult DuplicarParaHoje([FromQuery] string arquivo)
+        {
+            if (string.IsNullOrEmpty(arquivo)) return BadRequest("Nome inválido.");
+
+            string caminhoOrigem = ObterCaminhoPastaOrigem();
+            string caminhoFisico = BuscarArquivoIgnorandoCase(caminhoOrigem, arquivo);
+
+            if (string.IsNullOrEmpty(caminhoFisico))
+                return NotFound("Arquivo original não encontrado na pasta.");
+
+            try
+            {
+                // 1. Extrair a data do nome do arquivo (procura por 8 números seguidos: yyyyMMdd)
+                var match = System.Text.RegularExpressions.Regex.Match(arquivo, @"\d{8}");
+                if (!match.Success)
+                    return BadRequest("Não foi possível identificar uma data (yyyyMMdd) no nome do arquivo.");
+
+                string dataAntigaStr = match.Value;
+                if (!DateTime.TryParseExact(dataAntigaStr, "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out DateTime dataArquivo))
+                    return BadRequest("A data encontrada no nome do arquivo é inválida.");
+
+                // 2. Regra: Máximo 1 dia atrás
+                double diasDeDiferenca = (DateTime.Today - dataArquivo.Date).TotalDays;
+                if (diasDeDiferenca > 1 || diasDeDiferenca < 0)
+                {
+                    return BadRequest($"Você só pode duplicar arquivos gerados hoje ou ontem. Data do arquivo: {dataArquivo:dd/MM/yyyy}");
+                }
+
+                DateTime hoje = DateTime.Today;
+                string strHojeNome = hoje.ToString("yyyyMMdd");
+                string strHojeTagTraco = hoje.ToString("yyyy-MM-dd");
+
+                // 3. Montar o novo nome
+                string novoNome = arquivo.Replace(dataAntigaStr, strHojeNome);
+                string novoCaminhoFisico = Path.Combine(caminhoOrigem, novoNome);
+
+                if (System.IO.File.Exists(novoCaminhoFisico))
+                    return BadRequest($"O arquivo de hoje ({novoNome}) já existe na pasta!");
+
+                // 4. Abrir e alterar o conteúdo do XML
+                var xdoc = System.Xml.Linq.XDocument.Load(caminhoFisico);
+
+                var dtAtualizacao = xdoc.Descendants("DT_ATUALIZACAO").FirstOrDefault();
+                if (dtAtualizacao != null) dtAtualizacao.Value = strHojeTagTraco;
+
+                var cdVersao = xdoc.Descendants("CD_VERSAO").FirstOrDefault();
+                if (cdVersao != null) cdVersao.Value = strHojeNome;
+
+                // 5. Salvar a cópia
+                xdoc.Save(novoCaminhoFisico);
+
+                return Ok(new { mensagem = "Arquivo duplicado com sucesso!", novoArquivo = novoNome });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro ao processar o XML: {ex.Message}");
+            }
+        }
     }
 }

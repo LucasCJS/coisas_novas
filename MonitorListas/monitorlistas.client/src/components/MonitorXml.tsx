@@ -120,6 +120,35 @@ export const MonitorXml: React.FC = () => {
         }
     };
 
+    // ==========================================
+    // FUNÇÃO 4: DUPLICAR ARQUIVO PARA HOJE
+    // ==========================================
+    const handleDuplicarParaHoje = async (nomeArquivo: string) => {
+        if (!window.confirm(`Deseja criar uma cópia de '${nomeArquivo}' com a data de HOJE e atualizar as tags internas?`)) return;
+
+        try {
+            const token = localStorage.getItem('monitor_token');
+            const response = await fetch(`/api/xml/duplicar-para-hoje?arquivo=${encodeURIComponent(nomeArquivo)}`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.status === 401) {
+                window.location.reload();
+                return;
+            }
+
+            if (response.ok) {
+                alert("Arquivo copiado e atualizado com sucesso!\nO novo XML já deve aparecer na lista.");
+            } else {
+                const erroTexto = await response.text();
+                alert(`Não foi possível duplicar:\n${erroTexto}`);
+            }
+        } catch (erro) {
+            alert("Erro de comunicação com o servidor.");
+        }
+    };
+
     const handleLogout = () => {
         if (window.confirm("Deseja realmente sair do painel?")) {
             localStorage.removeItem('monitor_token');
@@ -405,6 +434,16 @@ export const MonitorXml: React.FC = () => {
                                                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
                                                         </svg>
                                                     </button>
+
+                                                    {/* === NOVO: BOTÃO DE DUPLICAR (Aparece apenas em arquivos válidos) === */}
+                                                    {arq.isValido && (
+                                                        <button onClick={() => handleDuplicarParaHoje(arq.nome)} style={{ ...styles.downloadButton, backgroundColor: '#f0f9ff', color: '#0369a1', borderColor: '#bae6fd' }} title="Duplicar para a data de Hoje">
+                                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={styles.downloadIcon}>
+                                                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                                            </svg>
+                                                        </button>
+                                                    )}
 
                                                     {/* Botões de Exclusão (APENAS na aba de Histórico/Inválidos) */}
                                                     {!arq.isValido && (
